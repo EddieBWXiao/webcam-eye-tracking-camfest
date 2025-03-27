@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script src="https://unpkg.com/jspsych@7.3.4"></script>
+    <script src="https://unpkg.com/@jspsych/plugin-preload@1.1.3"></script>
+    <script src="https://unpkg.com/@jspsych/plugin-html-button-response@1.2.0"></script>
+    <script src="https://unpkg.com/@jspsych/plugin-html-keyboard-response@1.1.3"></script>
+    <script src="https://unpkg.com/@jspsych/plugin-image-keyboard-response@1.1.3"></script>
+    <script src="https://unpkg.com/@jspsych/plugin-webgazer-init-camera@1.0.3"></script>
+    <script src="https://unpkg.com/@jspsych/plugin-webgazer-calibrate@1.0.3"></script>
+    <script src="https://unpkg.com/@jspsych/plugin-webgazer-validate@1.0.3"></script>
+    <script src="https://cdn.jsdelivr.net/gh/jspsych/jspsych@jspsych@7.0.0/examples/js/webgazer/webgazer.js"></script>
+    <script src="https://unpkg.com/@jspsych/extension-webgazer@1.0.3"></script>
+
+    <!-- Import other required plugins: there's a massive problem with this version -->
+    <script src="https://unpkg.com/@jspsych/plugin-survey-text@1.1.1"></script>
+    
+    <!-- Import jsPsych stylesheet -->
+    <link rel="stylesheet" href="https://unpkg.com/jspsych@7.3.4/css/jspsych.css">
+    
+    <style>
+    img.stimulus {
+        height: 80vh;
+        z-index: 100;
+    }    
+    .jspsych-display-element{
+    font-size: 36px;
+    }
+    .jspsych-btn{
+    font-size: 24px;
+    }
+    </style>
+  </head>
+  <body></body>
+  <script>
+    // Bowen Xiao (Eddie) 2025, based on https://www.jspsych.org/v7/overview/eye-tracking/; demo of webcam-based eye-tracking for CamFest
+
+    // Initialize jsPsych
+    var jsPsych = initJsPsych({
+        extensions: [
+            {type: jsPsychExtensionWebgazer}
+        ],
+      on_finish: function() {
+        // Save data to file
+        jsPsych.data.get().localSave('json', `demo${ptpID}.json`);
+      }
+    });
+    
+    // Timeline array to hold all trials
+    const timeline = [];
+    const stim_duration = 6;
+    
+    // Questions for the three trials
+    const timeline_variables = [
+      { 
+        question: `<b>How many people were there in the picture?</b>`
+      },
+      {
+        question: `<b>Was the family rich?</b>`
+      }
+    ];
+    
+    //preload 
+    var preload = {
+        type: jsPsychPreload,
+        images: ['./unexpected-visitors.jpg']
+    }
+    timeline.push(preload)
+
+    // Participant ID input
+    // Variable to store participant ID
+    let ptpID;
+    const input_ptp = {
+      type: jsPsychSurveyText,
+      questions: [
+        {prompt: 'Please enter the participant id', required: true}
+      ],
+      on_finish: function(data) {
+        // In jsPsych 7, responses are already parsed as an object
+        ptpID = data.response.Q0;
+        console.log("Participant ID:", ptpID);
+      }
+    };
+    timeline.push(input_ptp);
+    
+    
+    //=============== eye-tracking script ===================
+    var camera_instructions = {
+        type: jsPsychHtmlButtonResponse,
+        stimulus: `
+          <p>This experiment involves webcam-based eye-tracking. <br>We will need permission to access the camera.</p>
+          <p>You will be prompted to give permission on the next screen.</p>
+          <p>It may take up to 30 seconds for the camera to initialize after you give permission.</p>
+        `,
+        choices: ['Got it'],
+      }
+
+      var init_camera = {
+        type: jsPsychWebgazerInitCamera,
+        instructions: `<p style="font-size:24px; line-height: 1.2em">Position your head so that the webcam has a good view of your eyes.<br>
+        Center your face in the box and look directly towards the camera.<br><br>
+        It is important that you try and keep your head reasonably still throughout the experiment,<br>
+        so please take a moment to adjust your setup to be comfortable.<br><br>
+        When your face is centered in the box and the box is green, you can click to continue.</p>`
+      }
+
+      var calibration_instructions = {
+        type: jsPsychHtmlButtonResponse,
+        stimulus: `
+          <p>Now you'll calibrate the eye tracking, so that the software can use the image of your eyes to predict where you are looking.</p>
+          <p>You'll see a series of dots appear on the screen.<br>Look at each dot and click on it.</p>
+        `,
+        choices: ['Got it'],
+      }
+
+      var calibration = {
+        type: jsPsychWebgazerCalibrate,
+        calibration_points: [
+          [25,25],[75,25],[50,50],[25,75],[75,75]
+        ],
+        repetitions_per_point: 2,
+        randomize_calibration_order: true
+      }
+
+      var validation_instructions = {
+        type: jsPsychHtmlButtonResponse,
+        stimulus: `
+          <p>Now we'll measure the accuracy of the calibration.</p>
+          <p>Look at each dot as it appears on the screen.</p>
+          <p style="font-weight: bold;">You do not need to click on the dots this time.</p>
+        `,
+        choices: ['Got it'],
+        post_trial_gap: 1000
+      }
+
+      var validation = {
+        type: jsPsychWebgazerValidate,
+        validation_points: [
+          [25,25],[75,25],[50,50],[25,75],[75,75]
+        ],
+        roi_radius: 200,
+        time_to_saccade: 1000,
+        validation_duration: 2000,
+        data: {
+          task: 'validate'
+        }
+      }
+
+      var recalibrate_instructions = {
+        type: jsPsychHtmlButtonResponse,
+        stimulus: `
+          <p>The accuracy of the calibration is a little lower than we'd like.</p>
+          <p>Let's try calibrating one more time.</p>
+          <p>On the next screen, look at the dots and click on them.<p>
+        `,
+        choices: ['OK'],
+      }
+
+      var recalibrate = {
+        timeline: [recalibrate_instructions, calibration, validation_instructions, validation],
+        conditional_function: function(){
+          var validation_data = jsPsych.data.get().filter({task: 'validate'}).values()[0];
+          return validation_data.percent_in_roi.some(function(x){
+            var minimum_percent_acceptable = 50;
+            return x < minimum_percent_acceptable;
+          });
+        },
+        data: {
+          phase: 'recalibration'
+        }
+      }
+
+      var calibration_done = {
+        type: jsPsychHtmlButtonResponse,
+        stimulus: `
+          <p>Great, we're done with calibration!</p>
+        `,
+        choices: ['OK']
+      }
+
+
+    //=============== task script ===================
+    // Question screen before showing the image
+    const question_screen = {
+      type: jsPsychHtmlButtonResponse,
+      stimulus: function() {
+        return `<p>We will soon show you a picture for ${stim_duration}s. <br><br> After viewing the picture, please answer the following question: <br>` +
+          jsPsych.timelineVariable('question') +
+          `</p>`;
+      },
+      choices: ['Continue']
+    };
+    
+    // Image viewing trial
+    const view_img = {
+      type: jsPsychHtmlButtonResponse,
+      stimulus: function() {
+        return `<img src="unexpected-visitors.jpg" class="stimulus" id="the_view_img"></img>`;
+      },
+      choices: [],
+      trial_duration: stim_duration*1000, // Display image for this many miliseconds
+      prompt: " ",
+      data: {
+          phase: 'Yarbus'
+      },
+      extensions: [
+          {
+            type: jsPsychExtensionWebgazer, 
+            params: {targets: ['#the_view_img']}
+          }
+        ]
+    };
+    
+    // Free response after viewing the image
+    const free_response = {
+      type: jsPsychSurveyText,
+      preamble: function() {
+        return `<p>Please answer the following question: <br>` +
+          jsPsych.timelineVariable('question') +
+          `</p>`;
+      },
+      questions: [
+        {prompt: ' ', rows: 5}
+      ]
+    };
+    
+    const circles_check = {
+      type: jsPsychHtmlButtonResponse,
+      stimulus: `
+        <div id="s1" style="position: absolute; top: 5vh; left: 5vw; width: 20vh; height: 20vh; background-color: red; display: flex; align-items: center; justify-content: center; font-size: 2em; border-radius: 50%;">1</div>
+        <div id="s2" style="position: absolute; top: 5vh; right: 5vw; width: 20vh; height: 20vh; background-color: blue; display: flex; align-items: center; justify-content: center; font-size: 2em; border-radius: 50%;">2</div>
+        <div id="s3" style="position: absolute; bottom: 5vh; left: 5vw; width: 20vh; height: 20vh; background-color: green; display: flex; align-items: center; justify-content: center; font-size: 2em; border-radius: 50%;">3</div>
+        <div id="s4" style="position: absolute; bottom: 5vh; right: 5vw; width: 20vh; height: 20vh; background-color: yellow; display: flex; align-items: center; justify-content: center; font-size: 2em; border-radius: 50%;">4</div>
+      `,
+      choices: ['Continue'],
+      prompt: "<b>Please look at each circle in order (1 → 2 → 3 → 4),<br> and count as you go.<br><br> Then, press Continue.</b>",
+      data: function() {
+        return {
+          phase: 'CirclesCheck',
+          screen_width: window.innerWidth,
+          screen_height: window.innerHeight
+        };
+      },
+      extensions: [
+          {
+            type: jsPsychExtensionWebgazer, 
+            params: {targets: ['#s1','#s2','#s3','#s4']}
+          }
+      ]
+    };
+
+    // Combine the trials into a procedure
+    const trial_procedure = {
+      timeline: [
+        circles_check,
+        question_screen,
+        view_img,
+        free_response
+      ],
+      timeline_variables: timeline_variables
+    };
+    
+    
+    // build timeline
+    timeline.push(
+        camera_instructions, 
+        init_camera, 
+        calibration_instructions, 
+        calibration, 
+        validation_instructions, 
+        validation, 
+        recalibrate,
+        calibration_done
+    );
+    timeline.push(trial_procedure);
+    
+    // Final screen
+    const final_screen = {
+      type: jsPsychHtmlButtonResponse,
+      stimulus: '<p>Thank you for completing this demo! <br><br> Click the button below to download the data.<br>A volunteer can help visualise your gaze patterns.</p>',
+      choices: ['Finish']
+    };
+    timeline.push(final_screen);
+    
+    // Start the experiment
+    jsPsych.run(timeline);
+  </script>
+</html>
